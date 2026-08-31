@@ -91,8 +91,14 @@ export function createRoutes(
   )
 }
 
-export function createEmbeddedRoutes(options: ServerOptions = {}, overrides: LayerNode.Replacements = []) {
-  return makeRoutes(ServerAuth.Config.configLayer({ password: Option.none() }), options, () => [], overrides)
+type InstanceLayer = (replacements: LayerNode.Replacements) => Layer.Layer<Instance.Service>
+
+export function createEmbeddedRoutes(
+  options: ServerOptions = {},
+  overrides: LayerNode.Replacements = [],
+  instances?: InstanceLayer,
+) {
+  return makeRoutes(ServerAuth.Config.configLayer({ password: Option.none() }), options, () => [], overrides, instances)
 }
 
 function makeRoutes<AuthError, AuthServices>(
@@ -101,6 +107,7 @@ function makeRoutes<AuthError, AuthServices>(
   serviceURLs: () => ReadonlyArray<string>,
   // Runtime-profile replacements (e.g. workerd) applied after the standard set, so later entries win.
   overrides: LayerNode.Replacements,
+  instances?: InstanceLayer,
 ) {
   const pluginRuntimeCell = PluginRuntime.makeCell()
   const standard: LayerNode.Replacements = [
@@ -132,16 +139,24 @@ function makeRoutes<AuthError, AuthServices>(
     PluginRuntime.node.replace(PluginRuntime.layerWithCell(pluginRuntimeCell)),
     PluginRuntime.providerNode.replace(PluginRuntime.providerNodeWithCell(pluginRuntimeCell)),
   ]
-  const replacements: LayerNode.Replacements = [...standard, ...overrides]
+  const build = (overrides: LayerNode.Replacements) => {
+    const replacements: LayerNode.Replacements = [
+      ...standard,
+      // Resolve lazily so private instances inherit the complete host graph, including this selector.
+      ...(instances ? [Instance.byLocationNode.replace(Layer.suspend(() => instances(replacements)))] : []),
+      ...overrides,
+    ]
+    return AppNodeBuilder.build(applicationServices, replacements)
+  }
   const serviceLayer = options.simulation
     ? Layer.unwrap(
         Effect.gen(function* () {
           const { simulationReplacements } = yield* Effect.promise(() => import("@opencode-ai/simulation/backend"))
           const simulation = yield* simulationReplacements({ version: App.make(options.app).version })
-          return AppNodeBuilder.build(applicationServices, [...replacements, ...simulation])
+          return build([...overrides, ...simulation])
         }),
       )
-    : AppNodeBuilder.build(applicationServices, replacements)
+    : build(overrides)
   return serviceLayer.pipe(
     Layer.flatMap((context) => {
       const services = Layer.succeedContext(context)
