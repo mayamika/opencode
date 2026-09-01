@@ -49,10 +49,34 @@ const layer = Layer.effect(
     const bus = yield* Bus.Service
     const cache = yield* RepositoryCache.Service
     const scope = yield* Scope.Scope
-    const materialized = new Map<string, Info>()
+    const list = (): Info[] =>
+      Array.from(state.get().sources).flatMap(([name, source]) => {
+        const info = {
+          name,
+          source,
+          ...(source.description === undefined ? {} : { description: source.description }),
+          ...(source.hidden === undefined ? {} : { hidden: source.hidden }),
+        }
+        if (source.type === "local") return [Info.make({ ...info, path: source.path })]
+        const repository = Repository.parse(source.repository)
+        if (!repository || !Repository.isRemote(repository)) return []
+        if (source.branch) {
+          try {
+            Repository.validateBranch(source.branch)
+          } catch {
+            return []
+          }
+        }
+        return [
+          Info.make({
+            ...info,
+            path: AbsolutePath.make(Repository.cachePath(global.repos, repository, source.branch)),
+          }),
+        ]
+      })
     const refresh = Effect.fn("Reference.refresh")(function* () {
       yield* Effect.forEach(
-        Array.from(materialized.values()),
+        list(),
         (reference) =>
           Effect.gen(function* () {
             if (reference.source.type !== "git") return
@@ -77,37 +101,8 @@ const layer = Layer.effect(
         remove: (name) => draft.sources.delete(name),
         list: () => Array.from(draft.sources.entries()) as [string, Source][],
       }),
-      finalize: (draft) =>
+      notify: () =>
         Effect.gen(function* () {
-          materialized.clear()
-          for (const [name, source] of draft.list()) {
-            const info = {
-              name,
-              source,
-              ...(source.description === undefined ? {} : { description: source.description }),
-              ...(source.hidden === undefined ? {} : { hidden: source.hidden }),
-            }
-            if (source.type === "local") {
-              materialized.set(name, Info.make({ ...info, path: source.path }))
-              continue
-            }
-            const repository = Repository.parse(source.repository)
-            if (!repository || !Repository.isRemote(repository)) continue
-            if (source.branch) {
-              try {
-                Repository.validateBranch(source.branch)
-              } catch {
-                continue
-              }
-            }
-            materialized.set(
-              name,
-              Info.make({
-                ...info,
-                path: AbsolutePath.make(Repository.cachePath(global.repos, repository, source.branch)),
-              }),
-            )
-          }
           yield* refresh()
           yield* bus.publish(Reference.Event.Updated, {})
         }),
@@ -118,7 +113,7 @@ const layer = Layer.effect(
       reload: state.reload,
       refresh,
       list: Effect.fn("Reference.list")(function* () {
-        return Array.from(materialized.values())
+        return list()
       }),
     })
   }),

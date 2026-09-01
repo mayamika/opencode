@@ -196,7 +196,7 @@ const layer = Layer.effect(
           draft.tools.delete(id)
         },
       }),
-      finalize: () =>
+      notify: () =>
         Effect.forEach(
           state.get().errors,
           ({ kind, name, namespace, error }) =>
@@ -222,7 +222,7 @@ const layer = Layer.effect(
           }
           const direct = new Map(Array.from(active).filter(([, tool]) => tool.options?.codemode === false))
           const codeModeTools = new Map(Array.from(active).filter(([, tool]) => tool.options?.codemode !== false))
-          const namespaces = state.get().namespaces
+          const namespaces = new Map(state.get().namespaces)
           const codeModeInventory = { tools: codeModeTools, namespaces }
           const codeModeEnabled = !whollyDisabled("execute", rules)
           const codeModeTool = codeModeEnabled

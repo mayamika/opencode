@@ -1,10 +1,13 @@
 import { describe, expect } from "bun:test"
 import { ToolFailure } from "@opencode-ai/ai"
-import { Context, Effect, Exit, Fiber, Schema, Stream } from "effect"
+import { Clock, Context, Effect, Exit, Fiber, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { Plugin as EffectPlugin } from "@opencode-ai/plugin/effect"
 import { Config as ConfigSchema } from "@opencode-ai/schema/config"
 import { Agent } from "@opencode-ai/core/agent"
 import { Bus } from "@opencode-ai/core/bus"
+import { Credential } from "@opencode-ai/core/credential"
+import { Integration } from "@opencode-ai/core/integration"
 import { Plugin } from "@opencode-ai/core/plugin"
 import { PluginHost } from "@opencode-ai/core/plugin/host"
 import { PluginRuntime } from "@opencode-ai/core/plugin/runtime"
@@ -224,6 +227,68 @@ describe("Plugin", () => {
     }),
   )
 
+  it.effect("refreshes expired OAuth credentials through the context during activation", () =>
+    Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      const credentials = yield* Credential.Service
+      const integrations = yield* Integration.Service
+      const clock = yield* Clock.Clock
+      const integrationID = Integration.ID.make("refresh-fixture")
+      const methodID = Integration.MethodID.make("oauth")
+      const expired = Credential.OAuth.make({
+        type: "oauth",
+        methodID,
+        access: "expired-access",
+        refresh: "fixture-refresh",
+        expires: (yield* Clock.currentTimeMillis) + 60_000,
+      })
+      const stored = yield* credentials.create({ integrationID, label: "Fixture", value: expired })
+      yield* TestClock.adjust("2 minutes")
+      const refreshed = Credential.OAuth.make({
+        ...expired,
+        access: "fresh-access",
+        refresh: "rotated-refresh",
+        expires: (yield* Clock.currentTimeMillis) + 3_600_000,
+      })
+      const refreshes: Credential.OAuth[] = []
+      const resolved: Array<Credential.Value | undefined> = []
+      const plugin = EffectPlugin.define({
+        id: "oauth-refresh",
+        effect: (ctx) =>
+          Effect.gen(function* () {
+            yield* ctx.integration.transform((draft) =>
+              draft.method.update({
+                integrationID,
+                method: { id: methodID, type: "oauth", label: "Fixture" },
+                authorize: () => Effect.die("unexpected authorization"),
+                refresh: (value) =>
+                  Effect.sync(() => {
+                    refreshes.push(value)
+                    return refreshed
+                  }),
+              }),
+            )
+            const connection = yield* ctx.integration.connection.active(integrationID)
+            if (!connection) return yield* Effect.die("fixture connection not found")
+            resolved.push(yield* ctx.integration.connection.resolve(connection).pipe(Effect.orDie))
+          }).pipe(
+            // Plugin activation isolates ambient services, including the test clock.
+            Effect.provideService(Clock.Clock, clock),
+          ),
+      })
+
+      yield* plugins.activate([generation(plugin)])
+
+      expect(yield* plugins.list()).toMatchObject([{ id: "oauth-refresh", state: { status: "active" } }])
+      expect(resolved).toEqual([refreshed])
+      expect((yield* credentials.get(stored.id))?.value).toEqual(refreshed)
+      expect(
+        yield* integrations.connection.resolve({ type: "credential", id: stored.id, label: stored.label }),
+      ).toEqual(refreshed)
+      expect(refreshes).toEqual([expired])
+    }),
+  )
+
   it.effect("replaces plugins by ID and revision", () =>
     Effect.gen(function* () {
       const plugins = yield* Plugin.Service
@@ -358,9 +423,7 @@ describe("Plugin", () => {
   it.effect("reports activated and discovered plugin features", () =>
     Effect.gen(function* () {
       const plugins = yield* Plugin.Service
-      yield* plugins.activate([
-        { id: "rpc-plugin", revision: "1", features: { rpc: true }, effect: () => Effect.void },
-      ])
+      yield* plugins.activate([{ id: "rpc-plugin", revision: "1", features: { rpc: true }, effect: () => Effect.void }])
 
       expect(yield* plugins.list()).toEqual([
         {

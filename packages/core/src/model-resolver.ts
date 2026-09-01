@@ -4,7 +4,6 @@ import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { LanguageModel } from "@opencode-ai/ai"
 import { Auth } from "@opencode-ai/ai/route"
 import { Context, Effect, Layer, Schema } from "effect"
-import { produce } from "immer"
 import { AISDK } from "./aisdk.js"
 import { AISDKNative } from "./aisdk-native.js"
 import { Catalog } from "./catalog.js"
@@ -95,11 +94,12 @@ export const withVariant = (
     )
   return Effect.succeed(
     variant
-      ? produce(model, (draft) => {
-          draft.settings = Provider.mergeOverlay(draft.settings, variant.settings)
-          draft.headers = Provider.mergeHeaders(draft.headers, variant.headers)
-          draft.body = Provider.mergeOverlay(draft.body, variant.body)
-        })
+      ? {
+          ...model,
+          settings: Provider.mergeOverlay(model.settings, variant.settings),
+          headers: Provider.mergeHeaders(model.headers, variant.headers),
+          body: Provider.mergeOverlay(model.body, variant.body),
+        }
       : model,
   )
 }
@@ -147,10 +147,7 @@ const resolveCatalogModel = Effect.fn("ModelResolver.resolveCatalogModel")(funct
         ...configuration,
       }) ?? {},
     )
-    const runtime = produce(resolved, (draft) => {
-      draft.settings = settings
-    })
-    return yield* loadAISDK(runtime).pipe(Effect.mapError(() => unsupported(resolved)))
+    return yield* loadAISDK({ ...resolved, settings }).pipe(Effect.mapError(() => unsupported(resolved)))
   }
   if (!native) return yield* unsupported(resolved)
 
@@ -182,11 +179,15 @@ const resolveCatalogModel = Effect.fn("ModelResolver.resolveCatalogModel")(funct
 
 function prepareRuntimeModel(model: Info, credential: Credential.Value | undefined) {
   if (model.settings?.apiKey !== "" && (credential?.type !== "key" || credential.metadata === undefined)) return model
-  return produce(model, (draft) => {
-    if (draft.settings?.apiKey === "") delete draft.settings.apiKey
-    if (credential?.type === "key" && credential.metadata !== undefined)
-      draft.body = Provider.mergeOverlay(draft.body, credential.metadata)
-  })
+  return {
+    ...model,
+    ...(model.settings?.apiKey === ""
+      ? { settings: Object.fromEntries(Object.entries(model.settings).filter(([key]) => key !== "apiKey")) }
+      : {}),
+    ...(credential?.type === "key" && credential.metadata !== undefined
+      ? { body: Provider.mergeOverlay(model.body, credential.metadata) }
+      : {}),
+  }
 }
 
 function validateProviderVariables(
