@@ -44,6 +44,7 @@ export interface Settings {
     mobileDiffWrap: boolean
     terminalPlacement: TerminalPlacement
     followUpBehavior: FollowUpBehavior
+    experimentalBrowser: boolean
   }
   appearance: {
     fontSize: number
@@ -134,6 +135,7 @@ const defaultSettings: Settings = {
     mobileDiffWrap: true,
     terminalPlacement: "side",
     followUpBehavior: "steer",
+    experimentalBrowser: true,
   },
   appearance: {
     fontSize: 14,
@@ -284,6 +286,13 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         followUpBehavior: withFallback(() => store.general?.followUpBehavior, defaultSettings.general.followUpBehavior),
         setFollowUpBehavior(value: FollowUpBehavior) {
           setStore("general", "followUpBehavior", value)
+        },
+        experimentalBrowser: withFallback(
+          () => store.general?.experimentalBrowser,
+          defaultSettings.general.experimentalBrowser,
+        ),
+        setExperimentalBrowser(value: boolean) {
+          setStore("general", "experimentalBrowser", value)
         },
       },
       visibility: {

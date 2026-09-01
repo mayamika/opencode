@@ -31,6 +31,8 @@ import { SessionContextTab } from "./files/session-context-tab"
 import { createSessionTimelineInteraction } from "./timeline/interaction"
 import { ActiveSessionComposerRegion, createActiveSessionRegion } from "./composer/region"
 import { SessionIdentityHeader } from "./session-identity-header"
+import { createSessionBrowser } from "./browser/model"
+import { SessionBrowserPane } from "./browser/pane"
 
 const SessionMobileFiles = lazy(async () => {
   const { SessionMobileFiles } = await import("./files/session-mobile-files")
@@ -46,7 +48,8 @@ export function SessionScreen(props: { session: SessionModel }) {
     return info ? projectForSession(info, server.ctx.sync.data.project) : undefined
   })
   const isDesktop = session.isDesktop
-  const screen = createSessionScreenLayout(session)
+  const browser = createSessionBrowser(session)
+  const screen = createSessionScreenLayout(session, browser.opened)
   const timeline = createSessionTimelineInteraction(session)
   const messagesReady = timeline.ready
   const [store, setStore] = createStore({
@@ -249,7 +252,7 @@ export function SessionScreen(props: { session: SessionModel }) {
 
   return (
     <>
-      <SessionHeader />
+      <SessionHeader browser={browser} />
       <div class="flex-1 min-h-0 flex flex-col gap-2 px-2 pb-[var(--shell-bottom-inset,8px)] pt-[var(--shell-top-inset,8px)]">
         <div ref={screen.panel.ref} class="relative flex-1 min-h-0 flex flex-col md:flex-row gap-2">
           <div
@@ -330,7 +333,13 @@ export function SessionScreen(props: { session: SessionModel }) {
                         setStore("sideReviewPresent", false)
                       }}
                     >
-                      <SessionDesktopReview review={review} present={store.sideReviewPresent} />
+                      <Show
+                        when={browser.registration()}
+                        keyed
+                        fallback={<SessionDesktopReview review={review} present={store.sideReviewPresent} />}
+                      >
+                        {(registration) => <SessionBrowserPane registration={registration} browser={browser} />}
+                      </Show>
                     </div>
                   </Show>
                 </div>
