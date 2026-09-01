@@ -632,7 +632,7 @@ export const layer = (options?: Options) =>
       const reconcileLock = Semaphore.makeUnsafe(1)
       const reconcile = Effect.fnUntraced(function* () {
         // Draft updates mutate configs in place; keep the applied snapshot stable across reconciliation awaits.
-        const servers = new Map(Array.from(state.get().servers, ([name, config]) => [name, cloneConfig(config)]))
+        const servers = structuredClone(state.get().servers)
         if (!applied && entries.size === 0) {
           for (const [name, server] of servers) {
             entries.set(name, {

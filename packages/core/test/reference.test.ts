@@ -46,16 +46,18 @@ describe("Reference", () => {
       const references = yield* Reference.Service
       const bus = yield* Bus.Service
       const observed: string[][] = []
-      const unsubscribe = yield* bus.listen((event) =>
-        event.type === Reference.Event.Updated.type
-          ? references.list().pipe(
-              Effect.map((infos) => {
-                observed.push(infos.map((info) => info.name))
-              }),
-            )
-          : Effect.void,
+      yield* Effect.acquireRelease(
+        bus.listen((event) =>
+          event.type === Reference.Event.Updated.type
+            ? references.list().pipe(
+                Effect.map((infos) => {
+                  observed.push(infos.map((info) => info.name))
+                }),
+              )
+            : Effect.void,
+        ),
+        (unsubscribe) => unsubscribe,
       )
-      yield* Effect.addFinalizer(() => unsubscribe)
 
       yield* State.batch(
         Effect.gen(function* () {

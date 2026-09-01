@@ -1,10 +1,8 @@
 import { describe, expect } from "bun:test"
 import { State } from "@opencode-ai/core/state"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Scope } from "effect"
 import { TestClock } from "effect/testing"
-import { testEffect } from "./lib/effect"
-
-const it = testEffect(Layer.empty)
+import { it } from "./lib/effect"
 
 describe("State", () => {
   it.effect("commits a transform atomically when its updater is interrupted", () =>

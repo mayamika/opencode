@@ -87,7 +87,7 @@ export interface Interface<State, DraftApi> extends Transformable<DraftApi> {
 
 export function create<State, DraftApi>(options: Options<State, DraftApi>): Interface<State, DraftApi> {
   let state = options.initial()
-  let transforms: { run: TransformCallback<DraftApi> }[] = []
+  const transforms: { run: TransformCallback<DraftApi> }[] = []
   let prefix: { draft: DraftApi; applied: number } | undefined = { draft: options.draft(state), applied: 0 }
   let requestedAt = 0
   let closed = false
@@ -100,9 +100,12 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
     prefix = undefined
     const next = cached ? state : options.initial()
     const draft = cached ? cached.draft : options.draft(next)
-    transforms.slice(cached?.applied ?? 0).forEach((transform) => transform.run(draft))
+    for (let index = cached?.applied ?? 0; index < transforms.length; index++) {
+      transforms[index].run(draft)
+    }
     state = next
-    prefix = { draft, applied: transforms.length }
+    prefix = cached ?? { draft, applied: 0 }
+    prefix.applied = transforms.length
     return state
   }
 
@@ -112,15 +115,16 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
     if (options.notify) yield* options.notify()
   })
 
-  const publish = Effect.fnUntraced(function* (done: Deferred.Deferred<void>): Effect.fn.Return<void> {
+  const publish = Effect.fnUntraced(function* (done: Deferred.Deferred<void>) {
     const clock = yield* Clock.Clock
-    const remaining = requestedAt + reloadDebounce - clock.currentTimeMillisUnsafe()
-    if (remaining > 0) yield* Effect.sleep(remaining)
-    if (clock.currentTimeMillisUnsafe() < requestedAt + reloadDebounce) return yield* publish(done)
+    do {
+      const remaining = requestedAt + reloadDebounce - clock.currentTimeMillisUnsafe()
+      if (remaining > 0) yield* Effect.sleep(remaining)
+    } while (clock.currentTimeMillisUnsafe() < requestedAt + reloadDebounce)
 
     // Observers can request and await another reload without joining their own notification.
     pending = undefined
-    return yield* notify().pipe(Deferred.into(done), Effect.asVoid)
+    yield* notify().pipe(Deferred.into(done))
   })
 
   const changed = (debounce: boolean) =>
@@ -163,8 +167,9 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
           const transform = { run: update }
           const dispose = Effect.uninterruptible(
             Effect.suspend(() => {
-              if (!transforms.includes(transform)) return Effect.void
-              transforms = transforms.filter((item) => item !== transform)
+              const index = transforms.indexOf(transform)
+              if (index < 0) return Effect.void
+              transforms.splice(index, 1)
               prefix = undefined
               return changed(false)
             }),

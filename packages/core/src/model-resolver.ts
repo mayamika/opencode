@@ -3,7 +3,7 @@ export * as ModelResolver from "./model-resolver.js"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { LanguageModel } from "@opencode-ai/ai"
 import { Auth } from "@opencode-ai/ai/route"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema, Struct } from "effect"
 import { AISDK } from "./aisdk.js"
 import { AISDKNative } from "./aisdk-native.js"
 import { Catalog } from "./catalog.js"
@@ -157,7 +157,7 @@ const resolveCatalogModel = Effect.fn("ModelResolver.resolveCatalogModel")(funct
     Effect.mapError(() => unsupported(resolved)),
   )
   const settings = {
-    ...(credential ? withoutNativeAuthSettings(mapped) : mapped),
+    ...(credential ? Struct.omit(mapped, ["accessToken", "apiKey", "authToken"]) : mapped),
     ...(resolved.canonical === undefined ? {} : { provider: resolved.canonical }),
     ...nativeCredentialSettings(specifier, credential),
     headers: Provider.mergeHeaders(mapping?.headers, resolved.headers),
@@ -181,9 +181,7 @@ function prepareRuntimeModel(model: Info, credential: Credential.Value | undefin
   if (model.settings?.apiKey !== "" && (credential?.type !== "key" || credential.metadata === undefined)) return model
   return {
     ...model,
-    ...(model.settings?.apiKey === ""
-      ? { settings: Object.fromEntries(Object.entries(model.settings).filter(([key]) => key !== "apiKey")) }
-      : {}),
+    ...(model.settings?.apiKey === "" ? { settings: Struct.omit(model.settings, ["apiKey"]) } : {}),
     ...(credential?.type === "key" && credential.metadata !== undefined
       ? { body: Provider.mergeOverlay(model.body, credential.metadata) }
       : {}),
@@ -242,11 +240,6 @@ const nativeCredentialSettings = (specifier: string, credential: Credential.Valu
   )
     return { accessToken: credential.access }
   return { apiKey: credential.access }
-}
-
-const withoutNativeAuthSettings = (settings: Record<string, unknown>) => {
-  const { accessToken: _accessToken, apiKey: _apiKey, authToken: _authToken, ...rest } = settings
-  return rest
 }
 
 const unsupported = (model: Info) =>

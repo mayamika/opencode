@@ -1645,17 +1645,19 @@ for (const phase of ["active", "queued"]) {
       const service = Context.get(context, Mcp.Service)
       const observed: string[] = []
       let block = false
-      const unsubscribe = yield* bus.listen((event) =>
-        Effect.gen(function* () {
-          if (event.type !== McpEvent.StatusChanged.type) return
-          observed.push(Schema.decodeUnknownSync(McpEvent.StatusChanged.data)(event.data).server)
-          if (!block) return
-          block = false
-          yield* Deferred.succeed(entered, undefined)
-          yield* Deferred.await(release)
-        }),
+      yield* Effect.acquireRelease(
+        bus.listen((event) =>
+          Effect.gen(function* () {
+            if (event.type !== McpEvent.StatusChanged.type) return
+            observed.push(Schema.decodeUnknownSync(McpEvent.StatusChanged.data)(event.data).server)
+            if (!block) return
+            block = false
+            yield* Deferred.succeed(entered, undefined)
+            yield* Deferred.await(release)
+          }),
+        ),
+        (unsubscribe) => unsubscribe,
       )
-      yield* Effect.addFinalizer(() => unsubscribe)
       const source = { url: "https://example.com/initial", added: false }
       yield* service
         .transform((draft) => {

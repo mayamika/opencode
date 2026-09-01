@@ -45,7 +45,7 @@ yield *
   })
 ```
 
-OpenCode rebuilds the domain when a transform is registered or disposed. A rebuild starts from fresh domain state and runs every active transform in registration order.
+Registry reads apply pending transforms in registration order, reusing the already-applied prefix. Disposal and reload invalidate that prefix for a fresh replay. Notifications and resource reconciliation run separately from synchronous state materialization.
 
 Available transform hooks are namespaced by domain:
 

@@ -400,23 +400,17 @@ const layer = Layer.effect(
       }
 
       yield* Effect.gen(function* () {
-        const persistence = yield* Effect.sync(() => {
+        const persistence = yield* Effect.suspend(() => {
           const implementation = state
             .get()
             .integrations.get(attempt.integrationID)
             ?.implementations.get(attempt.methodID)
-          return attempt.label ?? implementation?.label?.(exit.value)
-        }).pipe(
-          Effect.flatMap((label) =>
-            createCredential({
-              integrationID: attempt.integrationID,
-              label,
-              value: exit.value,
-            }),
-          ),
-          Effect.asVoid,
-          Effect.exit,
-        )
+          return createCredential({
+            integrationID: attempt.integrationID,
+            label: attempt.label ?? implementation?.label?.(exit.value),
+            value: exit.value,
+          })
+        }).pipe(Effect.asVoid, Effect.exit)
         const settledAt = yield* Clock.currentTimeMillis
         const terminal: TerminalAttempt = Exit.isSuccess(persistence)
           ? {
@@ -434,7 +428,7 @@ const layer = Layer.effect(
             }
         // Persisting attempts cannot be cancelled, expired, or claimed again.
         yield* SynchronizedRef.update(attempts, (current) => new Map(current).set(attemptID, terminal))
-        if (Exit.isFailure(persistence)) yield* Effect.failCause(persistence.cause)
+        yield* persistence
       }).pipe(Effect.ensuring(close(attempt.scope)))
     }, Effect.uninterruptible)
 

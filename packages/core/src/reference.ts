@@ -1,7 +1,7 @@
 export * as Reference from "./reference.js"
 
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
-import { Context, Effect, Layer, Scope, Types } from "effect"
+import { Context, Effect, Layer, Scope } from "effect"
 import { Reference } from "@opencode-ai/schema/reference"
 import { Global } from "@opencode-ai/util/global"
 import { Bus } from "./bus.js"
@@ -25,7 +25,7 @@ export const Info = Reference.Info
 export type Info = Reference.Info
 
 type Data = {
-  sources: Map<string, Types.DeepMutable<Source>>
+  sources: Map<string, Source>
 }
 
 type Draft = {
@@ -97,9 +97,9 @@ const layer = Layer.effect(
       name: "reference",
       initial: () => ({ sources: new Map() }),
       draft: (draft) => ({
-        add: (name, source) => draft.sources.set(name, source as Types.DeepMutable<Source>),
+        add: (name, source) => draft.sources.set(name, source),
         remove: (name) => draft.sources.delete(name),
-        list: () => Array.from(draft.sources.entries()) as [string, Source][],
+        list: () => Array.from(draft.sources),
       }),
       notify: () =>
         Effect.gen(function* () {
