@@ -14,6 +14,12 @@ export const PluginHandler = HttpApiBuilder.group(Api, "server.plugin", (handler
         return yield* response(Plugin.Service.use((plugin) => plugin.list()))
       }),
     )
+    .handle("plugin.awaitActivation", () =>
+      Effect.gen(function* () {
+        const supervisor = yield* PluginSupervisor.Service
+        yield* supervisor.awaitActivation
+      }),
+    )
     .handle("plugin.check", (ctx) =>
       Effect.gen(function* () {
         const supervisor = yield* PluginSupervisor.Service
@@ -21,9 +27,7 @@ export const PluginHandler = HttpApiBuilder.group(Api, "server.plugin", (handler
         const plugins = yield* Plugin.Service
         const inventory = yield* plugins.list()
         const targets = [
-          ...new Set(
-            inventory.flatMap((plugin) => (plugin.source.type === "package" ? [plugin.source.target] : [])),
-          ),
+          ...new Set(inventory.flatMap((plugin) => (plugin.source.type === "package" ? [plugin.source.target] : []))),
         ].filter((target) => ctx.payload.target === undefined || target === ctx.payload.target)
         if (ctx.payload.target !== undefined && !targets.length)
           return yield* new InvalidRequestError({
